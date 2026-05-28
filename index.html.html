@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ANIMAX — Stream Anime</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, arrayUnion, arrayRemove, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA8QsJX5VWECvdj9rOOCgbG1-rADo9nRK8",
+  authDomain: "anime-ott-e143e.firebaseapp.com",
+  projectId: "anime-ott-e143e",
+  storageBucket: "anime-ott-e143e.firebasestorage.app",
+  messagingSenderId: "1018788038093",
+  appId: "1:1018788038093:web:e3b7e6aeabbd8e2bd1f084",
+  measurementId: "G-FYZ4QHEHYP"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ── Expose to global scope so inline handlers can call them ──
+window._fb = { auth, db, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, doc, setDoc, getDoc, updateDoc, arrayUnion, arrayRemove, onSnapshot };
+
+// ── Auth state listener ──
+onAuthStateChanged(auth, async (fbUser) => {
+  if (fbUser) {
+    // Fetch Firestore profile
+    const snap = await getDoc(doc(db, "users", fbUser.uid));
+    if (snap.exists()) {
+      window.curUser = { uid: fbUser.uid, ...snap.data() };
+    } else {
+      // Fallback: bare profile
+      window.curUser = { uid: fbUser.uid, name: fbUser.displayName || "User", email: fbUser.email, plan: "free" };
+    }
+    // Fetch watchlist
+    const wlSnap = await getDoc(doc(db, "watchlists", fbUser.uid));
+    window.watchlist = wlSnap.exists() ? (wlSnap.data().items || []) : [];
+    enterApp();
+  } else {
+    window.curUser = null;
+    window.watchlist = [];
+    showAuth();
+  }
+});
+</script>
+<style>
+:root{
+  --bg:#060610;--bg2:#0c0c20;--bg3:#12122a;
+  --card:#111126;--card2:#1a1a35;
+  --border:rgba(255,255,255,0.07);
+  --primary:#7c3aed;--primary2:#9b5cf6;--primary3:#c084fc;
+  --accent:#00d4ff;--pink:#ff2d78;--gold:#fbbf24;--green:#22c55e;
+  --text:#f0f0ff;--muted:#6b6b9a;--muted2:#3a3a60;
+  --nav-h:64px; --radius:12px; --radius-lg:18px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overflow-x:hidden;}
+::-webkit-scrollbar{width:4px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:#1e1e40;border-radius:4px;}
+
+/* ===PAGES=== */
+.page{display:none;} .page.active{display:block;}
+#authPage{min-height:100vh;display:none;align-items:center;justify-content:center;position:relative;overflow:hidden;}
+#authPage.active{display:flex;}
+
+/* ===AUTH BG=== */
+.auth-bg{position:absolute;inset:0;background:var(--bg);}
+.auth-bg::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 0%,rgba(124,58,237,0.2),transparent 70%),radial-gradient(ellipse 50% 50% at 80% 80%,rgba(0,212,255,0.1),transparent 60%),radial-gradient(ellipse 40% 40% at 20% 70%,rgba(255,45,120,0.08),transparent 60%);}
+.auth-bg-text{position:absolute;font-family:'Bebas Neue',sans-serif;font-size:280px;color:rgba(255,255,255,0.018);top:50%;left:50%;transform:translate(-50%,-50%);white-space:nowrap;pointer-events:none;}
+
+/* ===AUTH CARD=== */
+.auth-card{position:relative;z-index:2;width:100%;max-width:420px;margin:20px;background:rgba(12,12,32,0.95);border:0.5px solid rgba(124,58,237,0.3);border-radius:var(--radius-lg);padding:40px;backdrop-filter:blur(40px);}
+.auth-logo{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:5px;background:linear-gradient(90deg,var(--primary2),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-align:center;margin-bottom:8px;}
+.auth-tagline{text-align:center;font-size:12px;color:var(--muted);letter-spacing:2px;margin-bottom:32px;font-family:'JetBrains Mono',monospace;}
+.auth-tabs{display:flex;background:var(--bg);border-radius:8px;padding:3px;margin-bottom:28px;gap:3px;}
+.auth-tab{flex:1;padding:8px;border-radius:6px;border:none;background:transparent;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;}
+.auth-tab.active{background:var(--primary);color:#fff;}
+.auth-field{margin-bottom:16px;}
+.auth-label{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;display:block;}
+.auth-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--text);font-size:14px;outline:none;transition:border-color 0.2s;font-family:'Inter',sans-serif;}
+.auth-input:focus{border-color:var(--primary2);background:rgba(124,58,237,0.05);}
+.auth-input::placeholder{color:var(--muted2);}
+.auth-btn{width:100%;padding:13px;border-radius:8px;background:var(--primary);border:none;color:#fff;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:0.5px;transition:all 0.2s;margin-top:4px;}
+.auth-btn:hover{background:#6d28d9;transform:translateY(-1px);}
+.auth-error{background:rgba(239,68,68,0.1);border:0.5px solid rgba(239,68,68,0.3);border-radius:8px;padding:10px 12px;font-size:12px;color:#f87171;margin-top:12px;display:none;}
+.auth-divider{display:flex;align-items:center;gap:12px;margin:20px 0;color:var(--muted);font-size:11px;}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border);}
+.social-btn{width:100%;padding:11px;border-radius:8px;border:0.5px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:8px;}
+.social-btn:hover{background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.15);}
+.auth-plan-info{background:rgba(251,191,36,0.07);border:0.5px solid rgba(251,191,36,0.25);border-radius:8px;padding:12px;margin-top:16px;font-size:12px;color:rgba(251,191,36,0.9);display:flex;gap:8px;align-items:flex-start;}
+
+/* ===NAV=== */
+nav{position:fixed;top:0;left:0;right:0;z-index:1000;height:var(--nav-h);display:flex;align-items:center;padding:0 36px;gap:28px;transition:background 0.4s;}
+nav.scrolled{background:rgba(6,6,16,0.97);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);}
+.nav-logo{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:4px;background:linear-gradient(90deg,var(--primary2),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;cursor:pointer;flex-shrink:0;}
+.nav-links{display:flex;gap:2px;flex:1;}
+.nav-link{padding:6px 12px;border-radius:8px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;transition:all 0.2s;border:none;background:none;}
+.nav-link:hover,.nav-link.active{color:var(--text);background:rgba(255,255,255,0.05);}
+.nav-link.active{color:var(--primary3);}
+.nav-right{display:flex;align-items:center;gap:10px;margin-left:auto;}
+.nav-badge{padding:3px 10px;border-radius:100px;font-size:10px;font-weight:700;font-family:'JetBrains Mono',monospace;letter-spacing:1px;}
+.badge-free{background:rgba(107,107,154,0.2);border:0.5px solid rgba(107,107,154,0.4);color:var(--muted);}
+.badge-premium{background:linear-gradient(90deg,rgba(251,191,36,0.2),rgba(251,191,36,0.1));border:0.5px solid rgba(251,191,36,0.4);color:var(--gold);}
+.nav-icon-btn{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.05);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all 0.2s;font-size:14px;}
+.nav-icon-btn:hover{background:var(--primary);border-color:var(--primary);}
+.nav-profile-btn{position:relative;cursor:pointer;}
+.nav-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--accent));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:2px solid transparent;transition:border-color 0.2s;}
+.nav-avatar:hover{border-color:var(--primary2);}
+.nav-avatar.premium-ring{border-color:var(--gold);}
+/* Profile dropdown */
+.profile-dropdown{position:absolute;top:calc(100% + 10px);right:0;width:220px;background:var(--card2);border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.6);display:none;z-index:200;}
+.nav-profile-btn:hover .profile-dropdown{display:block;}
+.pd-header{padding:14px 16px;border-bottom:0.5px solid var(--border);}
+.pd-name{font-size:13px;font-weight:600;margin-bottom:2px;}
+.pd-email{font-size:11px;color:var(--muted);}
+.pd-plan-badge{margin-top:6px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px;}
+.pd-item{padding:10px 16px;font-size:13px;cursor:pointer;transition:background 0.15s;display:flex;align-items:center;gap:10px;}
+.pd-item:hover{background:rgba(255,255,255,0.05);}
+.pd-item.danger{color:#f87171;}
+.pd-item.danger:hover{background:rgba(239,68,68,0.08);}
+.pd-sep{height:0.5px;background:var(--border);}
+
+/* ===HERO=== */
+.hero{position:relative;height:92vh;min-height:600px;overflow:hidden;display:flex;align-items:flex-end;padding:0 56px 80px;}
+.hero-bg{position:absolute;inset:0;background:var(--bg);}
+.hero-bg img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1.2s;}
+.hero-bg img.loaded{opacity:0.38;}
+.hero-bg::after{content:'';position:absolute;inset:0;background:linear-gradient(to right,rgba(6,6,16,0.98) 28%,rgba(6,6,16,0.45) 65%,rgba(6,6,16,0.1) 100%),linear-gradient(to top,rgba(6,6,16,1) 0%,rgba(6,6,16,0.5) 30%,transparent 60%);}
+.hero-content{position:relative;z-index:2;max-width:580px;}
+.hero-badge-wrap{display:flex;gap:8px;align-items:center;margin-bottom:14px;}
+.hero-badge{display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--accent);border:0.5px solid rgba(0,212,255,0.3);padding:3px 10px;border-radius:100px;background:rgba(0,212,255,0.06);}
+.hero-lock-badge{display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--gold);border:0.5px solid rgba(251,191,36,0.3);padding:3px 10px;border-radius:100px;background:rgba(251,191,36,0.06);}
+.hero-title{font-family:'Bebas Neue',sans-serif;font-size:clamp(50px,8vw,92px);line-height:0.95;letter-spacing:2px;margin-bottom:14px;text-shadow:0 4px 40px rgba(0,0,0,0.8);}
+.hero-meta{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;}
+.hero-m{font-size:12px;color:var(--muted);font-weight:500;}
+.hero-m.hl{color:var(--gold);}
+.hero-m.gr{color:var(--green);display:flex;align-items:center;gap:3px;}
+.hero-dot{width:3px;height:3px;border-radius:50%;background:var(--muted2);}
+.hero-desc{font-size:14px;color:rgba(240,240,255,0.68);line-height:1.72;margin-bottom:24px;max-width:470px;}
+.hero-actions{display:flex;gap:10px;align-items:center;}
+.btn-play{display:flex;align-items:center;gap:9px;padding:12px 26px;border-radius:var(--radius);background:#fff;color:#000;font-weight:700;font-size:14px;cursor:pointer;border:none;transition:all 0.2s;}
+.btn-play:hover{background:rgba(255,255,255,0.85);transform:scale(1.03);}
+.btn-play .pi{font-size:16px;}
+.btn-ghost{display:flex;align-items:center;gap:8px;padding:12px 22px;border-radius:var(--radius);background:rgba(255,255,255,0.1);border:0.5px solid rgba(255,255,255,0.15);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;backdrop-filter:blur(8px);}
+.btn-ghost:hover{background:rgba(255,255,255,0.18);}
+.btn-wl{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,0.08);border:1.5px solid rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;transition:all 0.2s;}
+.btn-wl:hover,.btn-wl.added{border-color:var(--primary2);color:var(--primary2);}
+.hero-dots{position:absolute;right:56px;bottom:80px;z-index:2;display:flex;gap:6px;}
+.h-dot{width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,0.22);cursor:pointer;transition:all 0.3s;}
+.h-dot.active{width:24px;background:var(--primary2);}
+
+/* ===FREE BANNER=== */
+.free-banner{background:linear-gradient(90deg,rgba(251,191,36,0.1),rgba(124,58,237,0.08));border-top:0.5px solid rgba(251,191,36,0.2);border-bottom:0.5px solid rgba(251,191,36,0.2);padding:10px 40px;display:flex;align-items:center;gap:12px;font-size:13px;}
+.free-banner .fb-icon{font-size:16px;}
+.free-banner .fb-text{flex:1;color:rgba(240,240,255,0.8);}
+.free-banner .fb-text strong{color:var(--gold);}
+.free-banner .upgrade-mini-btn{padding:6px 16px;border-radius:100px;background:var(--gold);color:#000;font-size:11px;font-weight:700;border:none;cursor:pointer;letter-spacing:0.5px;white-space:nowrap;transition:all 0.2s;}
+.free-banner .upgrade-mini-btn:hover{background:#f59e0b;}
+
+/* ===ROWS=== */
+.rows-wrap{padding:0 0 80px;}
+.row-sec{margin-bottom:44px;}
+.row-hdr{display:flex;align-items:center;justify-content:space-between;padding:0 36px;margin-bottom:14px;}
+.row-ttl{font-size:17px;font-weight:700;letter-spacing:-0.3px;}
+.row-see{font-size:12px;color:var(--primary2);cursor:pointer;font-weight:500;}
+.row-scroll{display:flex;gap:12px;overflow-x:auto;padding:4px 36px 10px;scrollbar-width:none;}
+.row-scroll::-webkit-scrollbar{display:none;}
+/* ===CARD=== */
+.ac{flex-shrink:0;width:155px;cursor:pointer;transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1);position:relative;}
+.ac:hover{transform:scale(1.07) translateY(-6px);z-index:10;}
+.ac-img{width:100%;aspect-ratio:2/3;border-radius:var(--radius);overflow:hidden;background:var(--card2);position:relative;}
+.ac-img img{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity 0.4s;}
+.ac-img img.loaded{opacity:1;}
+.ac-img .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:38px;color:rgba(255,255,255,0.05);}
+.ac-ov{position:absolute;inset:0;border-radius:var(--radius);background:linear-gradient(to top,rgba(6,6,16,0.95),transparent 55%);opacity:0;transition:opacity 0.3s;display:flex;align-items:flex-end;padding:10px;gap:6px;}
+.ac:hover .ac-ov{opacity:1;}
+.pb{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;font-size:12px;color:#000;transition:transform 0.2s;}
+.pb:hover{transform:scale(1.1);}
+/* LOCK OVERLAY */
+.ac-lock{position:absolute;inset:0;border-radius:var(--radius);background:rgba(6,6,16,0.82);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;backdrop-filter:blur(3px);}
+.ac-lock .lk-icon{font-size:22px;}
+.ac-lock .lk-text{font-size:9px;font-family:'JetBrains Mono',monospace;color:var(--gold);letter-spacing:1px;text-transform:uppercase;}
+.ac-badge{position:absolute;top:7px;left:7px;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:4px;}
+.b-hot{background:var(--pink);color:#fff;}
+.b-new{background:var(--green);color:#000;}
+.b-top{background:var(--gold);color:#000;}
+.b-free{background:rgba(34,197,94,0.85);color:#000;}
+.ac-info{padding:7px 3px 0;}
+.ac-ttl{font-size:12px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:4px;}
+.ac-sub{font-size:10px;color:var(--muted);}
+
+/* ===VIDEO MODAL=== */
+#videoModal{position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,0.95);display:none;align-items:center;justify-content:center;}
+#videoModal.open{display:flex;}
+.vm-inner{width:90vw;max-width:1100px;position:relative;}
+.vm-close{position:absolute;top:-44px;right:0;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.1);border:none;color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.vm-close:hover{background:rgba(255,255,255,0.2);}
+.vm-frame{aspect-ratio:16/9;background:#000;border-radius:var(--radius);}
+.vm-frame iframe{width:100%;height:100%;border:none;border-radius:var(--radius);}
+
+/* ===DETAIL MODAL=== */
+#detailModal{position:fixed;inset:0;z-index:2500;background:rgba(0,0,0,0.9);backdrop-filter:blur(10px);display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 20px;}
+#detailModal.open{display:flex;}
+.dm-inner{background:var(--bg2);border-radius:var(--radius-lg);width:100%;max-width:860px;overflow:hidden;border:0.5px solid var(--border);margin:auto;}
+.dm-banner{position:relative;height:420px;overflow:hidden;}
+.dm-banner img{width:100%;height:100%;object-fit:cover;object-position:top;}
+.dm-banner::after{content:'';position:absolute;inset:0;background:linear-gradient(to top,var(--bg2) 0%,rgba(12,12,32,0.55) 50%,transparent 100%);}
+.dm-close{position:absolute;top:14px;right:14px;z-index:10;width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,0.7);border:0.5px solid var(--border);color:var(--text);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.dm-body{padding:22px 30px 30px;}
+.dm-title{font-family:'Bebas Neue',sans-serif;font-size:42px;letter-spacing:1px;margin-bottom:10px;line-height:1;}
+.dm-meta{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+.dm-pill{font-size:11px;font-weight:600;padding:3px 10px;border-radius:100px;}
+.p-yr{background:rgba(251,191,36,0.12);color:var(--gold);border:0.5px solid rgba(251,191,36,0.3);}
+.p-ep{background:rgba(0,212,255,0.08);color:var(--accent);border:0.5px solid rgba(0,212,255,0.2);}
+.p-st{background:rgba(34,197,94,0.08);color:var(--green);border:0.5px solid rgba(34,197,94,0.2);}
+.p-lock{background:rgba(251,191,36,0.12);color:var(--gold);border:0.5px solid rgba(251,191,36,0.3);}
+.dm-rating{font-size:14px;font-weight:700;color:var(--gold);margin-bottom:12px;}
+.dm-desc{font-size:14px;line-height:1.75;color:rgba(240,240,255,0.72);margin-bottom:18px;}
+.dm-genres{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:22px;}
+.g-chip{font-size:11px;padding:4px 11px;border-radius:100px;background:rgba(124,58,237,0.1);border:0.5px solid rgba(124,58,237,0.25);color:var(--primary3);}
+.dm-actions{display:flex;gap:10px;margin-bottom:26px;}
+.dm-actions .btn-play{flex:1;justify-content:center;padding:12px;}
+.ep-ttl{font-size:15px;font-weight:700;margin-bottom:12px;}
+.ep-list{display:flex;flex-direction:column;gap:2px;}
+.ep-item{display:flex;align-items:center;gap:12px;padding:10px;border-radius:8px;cursor:pointer;transition:background 0.15s;position:relative;}
+.ep-item:hover{background:rgba(255,255,255,0.04);}
+.ep-num{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);width:26px;flex-shrink:0;}
+.ep-thumb{width:96px;height:54px;border-radius:6px;background:var(--card2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;color:rgba(255,255,255,0.07);position:relative;}
+.ep-thumb::after{content:'▶';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;color:rgba(255,255,255,0.7);background:rgba(0,0,0,0.4);opacity:0;transition:opacity 0.2s;border-radius:6px;}
+.ep-item:hover .ep-thumb::after{opacity:1;}
+.ep-lock-overlay{position:absolute;inset:0;background:rgba(6,6,16,0.7);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px;}
+.ep-inf{flex:1;}
+.ep-name{font-size:13px;font-weight:500;margin-bottom:2px;}
+.ep-dur{font-size:11px;color:var(--muted);}
+.ep-prog{height:2px;background:rgba(255,255,255,0.07);border-radius:1px;margin-top:5px;overflow:hidden;}
+.ep-prog-f{height:100%;background:var(--primary2);border-radius:1px;}
+
+/* ===UPGRADE MODAL=== */
+#upgradeModal{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,0.92);backdrop-filter:blur(16px);display:none;align-items:center;justify-content:center;padding:20px;}
+#upgradeModal.open{display:flex;}
+.um-inner{background:var(--bg2);border:0.5px solid rgba(251,191,36,0.3);border-radius:var(--radius-lg);width:100%;max-width:520px;overflow:hidden;position:relative;}
+.um-close{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.07);border:none;color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;transition:all 0.2s;}
+.um-close:hover{color:var(--text);background:rgba(255,255,255,0.12);}
+.um-header{background:linear-gradient(135deg,#1a0a2e,#12122a);padding:32px 32px 24px;text-align:center;border-bottom:0.5px solid rgba(251,191,36,0.15);}
+.um-crown{font-size:44px;margin-bottom:8px;}
+.um-title{font-family:'Bebas Neue',sans-serif;font-size:38px;letter-spacing:3px;background:linear-gradient(90deg,var(--gold),#f97316);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.um-subtitle{font-size:13px;color:var(--muted);margin-top:6px;}
+.um-body{padding:28px 32px;}
+/* Plans comparison */
+.plans-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:24px;}
+.plan-card{border-radius:var(--radius);padding:18px;border:1.5px solid var(--border);position:relative;transition:border-color 0.2s;}
+.plan-card.free-plan{background:rgba(255,255,255,0.02);}
+.plan-card.premium-plan{background:linear-gradient(135deg,rgba(251,191,36,0.06),rgba(124,58,237,0.06));border-color:rgba(251,191,36,0.3);}
+.plan-card.selected{border-color:var(--primary2);}
+.plan-card .plan-name{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;font-family:'JetBrains Mono',monospace;}
+.plan-card .plan-price{font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:1px;color:var(--text);line-height:1;}
+.plan-card .plan-period{font-size:11px;color:var(--muted);}
+.plan-card .plan-feats{margin-top:12px;display:flex;flex-direction:column;gap:6px;}
+.plan-card .pf{font-size:12px;display:flex;gap:6px;align-items:flex-start;color:rgba(240,240,255,0.75);}
+.plan-card .pf .tick{color:var(--green);font-size:11px;margin-top:1px;flex-shrink:0;}
+.plan-card .pf .cross{color:var(--muted2);font-size:11px;margin-top:1px;flex-shrink:0;}
+.plan-badge-best{position:absolute;top:-1px;right:12px;background:var(--gold);color:#000;font-size:9px;font-weight:700;padding:2px 8px;border-radius:0 0 6px 6px;letter-spacing:1px;}
+/* Payment form */
+.pay-section{border-top:0.5px solid var(--border);padding-top:22px;}
+.pay-title{font-size:13px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:6px;}
+.pay-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+.pay-field{margin-bottom:10px;}
+.pay-label{font-size:10px;font-weight:600;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:5px;display:block;}
+.pay-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:13px;outline:none;transition:border-color 0.2s;font-family:'Inter',sans-serif;}
+.pay-input:focus{border-color:var(--primary2);}
+.pay-input::placeholder{color:var(--muted2);}
+.pay-methods{display:flex;gap:8px;margin-bottom:14px;}
+.pay-method{flex:1;padding:9px;border:1.5px solid var(--border);border-radius:8px;text-align:center;cursor:pointer;font-size:11px;font-weight:600;transition:all 0.2s;color:var(--muted);}
+.pay-method:hover{border-color:var(--primary2);color:var(--primary2);}
+.pay-method.selected{border-color:var(--primary2);background:rgba(124,58,237,0.1);color:var(--primary2);}
+.pay-now-btn{width:100%;padding:13px;border-radius:10px;background:linear-gradient(90deg,#f59e0b,#d97706);border:none;color:#000;font-size:15px;font-weight:800;cursor:pointer;letter-spacing:0.5px;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:4px;}
+.pay-now-btn:hover{background:linear-gradient(90deg,#fbbf24,#f59e0b);transform:translateY(-1px);}
+.pay-now-btn:disabled{background:var(--muted2);cursor:not-allowed;transform:none;}
+.pay-secure{text-align:center;font-size:11px;color:var(--muted);margin-top:10px;display:flex;align-items:center;justify-content:center;gap:5px;}
+
+/* ===SUCCESS SCREEN=== */
+#successScreen{position:fixed;inset:0;z-index:5000;background:rgba(0,0,0,0.97);display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;text-align:center;padding:40px;}
+#successScreen.open{display:flex;}
+.ss-anim{font-size:80px;animation:pop 0.5s cubic-bezier(0.34,1.56,0.64,1);}
+@keyframes pop{0%{transform:scale(0);opacity:0;}100%{transform:scale(1);opacity:1;}}
+.ss-title{font-family:'Bebas Neue',sans-serif;font-size:52px;letter-spacing:3px;background:linear-gradient(90deg,var(--gold),var(--primary2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.ss-sub{font-size:15px;color:rgba(240,240,255,0.7);max-width:400px;}
+.ss-btn{padding:13px 36px;border-radius:var(--radius);background:var(--primary);border:none;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all 0.2s;margin-top:8px;}
+.ss-btn:hover{background:#6d28d9;}
+
+/* ===WATCHLIST PAGE=== */
+#wlPage{padding:calc(var(--nav-h) + 32px) 36px 60px;display:none;}
+#wlPage.active{display:block;}
+.pg-ttl{font-family:'Bebas Neue',sans-serif;font-size:48px;letter-spacing:2px;margin-bottom:6px;}
+.pg-sub{color:var(--muted);font-size:14px;margin-bottom:30px;}
+.wl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:18px;}
+
+/* ===TOAST=== */
+.toast{position:fixed;bottom:28px;right:28px;z-index:9999;background:var(--card2);border:0.5px solid var(--primary2);border-radius:var(--radius);padding:11px 16px;font-size:13px;font-weight:500;color:var(--text);transform:translateY(70px);opacity:0;transition:all 0.3s;pointer-events:none;display:flex;align-items:center;gap:8px;box-shadow:0 10px 40px rgba(0,0,0,0.5);}
+.toast.show{transform:translateY(0);opacity:1;}
+
+footer{background:var(--bg2);border-top:1px solid var(--border);padding:36px;text-align:center;}
+footer .f-logo{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:5px;background:linear-gradient(90deg,var(--primary2),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px;}
+footer p{font-size:11px;color:var(--muted);letter-spacing:1.5px;}
+
+/* ===SEARCH OVERLAY=== */
+#srchOv{position:fixed;inset:0;z-index:2000;background:rgba(6,6,16,0.97);backdrop-filter:blur(30px);display:none;flex-direction:column;padding:72px 36px 36px;}
+#srchOv.open{display:flex;}
+.so-top{display:flex;align-items:center;gap:14px;margin-bottom:28px;}
+.so-top input{flex:1;background:var(--card2);border:1px solid rgba(124,58,237,0.3);border-radius:var(--radius);padding:13px 18px;font-size:15px;color:var(--text);outline:none;font-family:'Inter',sans-serif;}
+.so-top input:focus{border-color:var(--primary2);}
+.so-top input::placeholder{color:var(--muted);}
+.so-close{width:40px;height:40px;border-radius:50%;background:var(--card2);border:0.5px solid var(--border);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--muted);}
+#srchResults{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:12px;overflow-y:auto;}
+
+@media(max-width:768px){nav{padding:0 18px;} .nav-links{display:none;} .hero{padding:0 22px 56px;height:80vh;} .hero-title{font-size:46px;} .rows-wrap .row-hdr,.rows-wrap .row-scroll{padding-left:18px;padding-right:18px;} .dm-body{padding:18px 18px 24px;} .dm-banner{height:260px;} .dm-title{font-size:30px;} .plans-row{grid-template-columns:1fr;} .um-body,.um-header{padding-left:20px;padding-right:20px;} }
+</style>
+</head>
+<body>
+
+<!-- AUTH PAGE -->
+<div id="authPage" class="active">
+  <div class="auth-bg"><div class="auth-bg-text">ANIMAX</div></div>
+  <div class="auth-card">
+    <div class="auth-logo">ANIMAX</div>
+    <div class="auth-tagline">Stream · Discover · Binge · Repeat</div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabLogin" onclick="switchTab('login')">Sign In</button>
+      <button class="auth-tab" id="tabReg" onclick="switchTab('register')">Create Account</button>
+    </div>
+    <!-- LOGIN -->
+    <div id="loginForm">
+      <div class="auth-field"><label class="auth-label">Email</label><input class="auth-input" id="li-email" type="email" placeholder="your@email.com"></div>
+      <div class="auth-field"><label class="auth-label">Password</label><input class="auth-input" id="li-pass" type="password" placeholder="••••••••"></div>
+      <button class="auth-btn" onclick="doLogin()">Sign In →</button>
+      <div class="auth-error" id="li-err"></div>
+      <div class="auth-divider">or continue with</div>
+      <button class="social-btn" onclick="demoLogin()">🎌 &nbsp;Sign in as Demo User</button>
+    </div>
+    <!-- REGISTER -->
+    <div id="regForm" style="display:none;">
+      <div class="auth-field"><label class="auth-label">Full Name</label><input class="auth-input" id="rg-name" type="text" placeholder="Your Name"></div>
+      <div class="auth-field"><label class="auth-label">Email</label><input class="auth-input" id="rg-email" type="email" placeholder="your@email.com"></div>
+      <div class="auth-field"><label class="auth-label">Password</label><input class="auth-input" id="rg-pass" type="password" placeholder="Min. 6 characters"></div>
+      <button class="auth-btn" onclick="doRegister()">Create Account →</button>
+      <div class="auth-error" id="rg-err"></div>
+      <div class="auth-plan-info">⭐ Free plan — Watch 10 free anime. Upgrade to Premium (₹500/mo) for unlimited access.</div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="appPage" class="page">
+  <!-- NAV -->
+  <nav id="mainNav">
+    <div class="nav-logo" onclick="goHome()">ANIMAX</div>
+    <div class="nav-links">
+      <button class="nav-link active" id="nlHome" onclick="goHome()">Home</button>
+      <button class="nav-link" onclick="">Browse</button>
+      <button class="nav-link" onclick="">New & Popular</button>
+      <button class="nav-link" onclick="goWL()">My List</button>
+    </div>
+    <div class="nav-right">
+      <span class="nav-badge" id="planBadge">FREE</span>
+      <div class="nav-icon-btn" onclick="toggleSearch()" title="Search">🔍</div>
+      <div class="nav-profile-btn">
+        <div class="nav-avatar" id="navAvatar">A</div>
+        <div class="profile-dropdown">
+          <div class="pd-header">
+            <div class="pd-name" id="pdName">User</div>
+            <div class="pd-email" id="pdEmail">user@email.com</div>
+            <div class="pd-plan-badge" id="pdPlanBadge"></div>
+          </div>
+          <div class="pd-item" onclick="goHome()">🏠 &nbsp;Home</div>
+          <div class="pd-item" onclick="goWL()">📋 &nbsp;My List</div>
+          <div class="pd-item" onclick="openUpgrade()" id="pdUpgradeItem">⭐ &nbsp;Upgrade to Premium</div>
+          <div class="pd-sep"></div>
+          <div class="pd-item" onclick="openUpgrade()">💳 &nbsp;Manage Plan</div>
+          <div class="pd-sep"></div>
+          <div class="pd-item danger" onclick="doLogout()">🚪 &nbsp;Sign Out</div>
+        </div>
+      </div>
+    </div>
+  </nav>
+  <!-- SEARCH -->
+  <div id="srchOv">
+    <div class="so-top">
+      <input type="text" id="srchInput" placeholder="Search anime, genres, characters..." oninput="doSearch(this.value)">
+      <button class="so-close" onclick="toggleSearch()">✕</button>
+    </div>
+    <div id="srchResults"></div>
+  </div>
+  <!-- HOME -->
+  <div id="homeView">
+    <section class="hero" id="heroSec">
+      <div class="hero-bg" id="heroBg"><img id="heroImg" src="" alt=""></div>
+      <div class="hero-content">
+        <div class="hero-badge-wrap"><div class="hero-badge">⭐ FEATURED</div><div class="hero-lock-badge" id="heroLockBadge" style="display:none">🔒 PREMIUM</div></div>
+        <div class="hero-title" id="hTitle">ATTACK ON TITAN</div>
+        <div class="hero-meta">
+          <span class="hero-m hl" id="hYear">2013</span><span class="hero-dot"></span>
+          <span class="hero-m gr" id="hRating">★ 9.1</span><span class="hero-dot"></span>
+          <span class="hero-m" id="hEps">87 Episodes</span><span class="hero-dot"></span>
+          <span class="hero-m">HD</span>
+        </div>
+        <div class="hero-desc" id="hDesc">In a world where humanity hides behind massive walls to survive against giant man-eating Titans, Eren Yeager vows to destroy them all after witnessing tragedy.</div>
+        <div class="hero-actions">
+          <button class="btn-play" id="hPlay"><span class="pi">▶</span> Play Now</button>
+          <button class="btn-ghost" id="hMore">ℹ More Info</button>
+          <button class="btn-wl" id="hWL" title="My List">+</button>
+        </div>
+      </div>
+      <div class="hero-dots" id="heroDots"></div>
+    </section>
+    <div id="freeBanner" class="free-banner" style="display:none">
+      <span class="fb-icon">⚡</span>
+      <div class="fb-text">You're on the <strong>Free Plan</strong> — Only 10 anime unlocked. <strong>Upgrade to Premium</strong> for unlimited access to 100+ titles.</div>
+      <button class="upgrade-mini-btn" onclick="openUpgrade()">Upgrade ₹500/mo →</button>
+    </div>
+    <div class="rows-wrap" id="rowsWrap"></div>
+  </div>
+  <!-- WATCHLIST -->
+  <div id="wlPage">
+    <div class="pg-ttl">MY LIST</div>
+    <div class="pg-sub" id="wlSub">Saved anime appears here.</div>
+    <div class="wl-grid" id="wlGrid"></div>
+  </div>
+  <footer><div class="f-logo">ANIMAX</div><p>STREAM · DISCOVER · BINGE · REPEAT &nbsp;|&nbsp; ₹500/mo PREMIUM</p></footer>
+</div>
+
+<!-- VIDEO MODAL -->
+<div id="videoModal">
+  <div class="vm-inner">
+    <button class="vm-close" onclick="closeVideo()">✕</button>
+    <div class="vm-frame"><iframe id="vmFrame" src="" allowfullscreen allow="autoplay;encrypted-media"></iframe></div>
+  </div>
+</div>
+
+<!-- DETAIL MODAL -->
+<div id="detailModal">
+  <div class="dm-inner">
+    <div class="dm-banner"><img id="dmImg" src="" alt=""><button class="dm-close" onclick="closeDetail()">✕</button></div>
+    <div class="dm-body">
+      <div class="dm-title" id="dmTitle"></div>
+      <div class="dm-meta" id="dmMeta"></div>
+      <div class="dm-rating" id="dmRating"></div>
+      <p class="dm-desc" id="dmDesc"></p>
+      <div class="dm-genres" id="dmGenres"></div>
+      <div class="dm-actions" id="dmActions"></div>
+      <div class="ep-ttl">Episodes <span id="epCt" style="font-size:12px;color:var(--muted);font-weight:400;"></span></div>
+      <div class="ep-list" id="epList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- UPGRADE MODAL -->
+<div id="upgradeModal">
+  <div class="um-inner">
+    <button class="um-close" onclick="closeUpgrade()">✕</button>
+    <div class="um-header">
+      <div class="um-crown">👑</div>
+      <div class="um-title">GO PREMIUM</div>
+      <div class="um-subtitle">Unlimited anime. No ads. HD quality. Cancel anytime.</div>
+    </div>
+    <div class="um-body">
+      <div class="plans-row">
+        <div class="plan-card free-plan">
+          <div class="plan-name">Free</div>
+          <div class="plan-price">₹0</div>
+          <div class="plan-period">forever</div>
+          <div class="plan-feats">
+            <div class="pf"><span class="tick">✓</span><span>10 anime titles</span></div>
+            <div class="pf"><span class="cross">✗</span><span>New releases locked</span></div>
+            <div class="pf"><span class="cross">✗</span><span>HD quality locked</span></div>
+            <div class="pf"><span class="cross">✗</span><span>With ads</span></div>
+            <div class="pf"><span class="cross">✗</span><span>Download offline</span></div>
+          </div>
+        </div>
+        <div class="plan-card premium-plan">
+          <div class="plan-badge-best">BEST VALUE</div>
+          <div class="plan-name" style="color:var(--gold)">Premium</div>
+          <div class="plan-price" style="background:linear-gradient(90deg,var(--gold),#f97316);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">₹500</div>
+          <div class="plan-period">per month</div>
+          <div class="plan-feats">
+            <div class="pf"><span class="tick">✓</span><span>100+ anime titles</span></div>
+            <div class="pf"><span class="tick">✓</span><span>New releases first</span></div>
+            <div class="pf"><span class="tick">✓</span><span>Full HD + 4K</span></div>
+            <div class="pf"><span class="tick">✓</span><span>Zero ads</span></div>
+            <div class="pf"><span class="tick">✓</span><span>Offline downloads</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="pay-section">
+        <div class="pay-title">💳 Payment Details <span style="font-size:11px;color:var(--muted);font-weight:400;">— ₹500 / month</span></div>
+        <div class="pay-methods">
+          <div class="pay-method selected" onclick="selectPayMethod(this)">💳 Card</div>
+          <div class="pay-method" onclick="selectPayMethod(this)">📱 UPI</div>
+          <div class="pay-method" onclick="selectPayMethod(this)">🏦 Netbanking</div>
+        </div>
+        <div id="cardForm">
+          <div class="pay-field"><label class="pay-label">Cardholder Name</label><input class="pay-input" id="cardName" placeholder="Name on card"></div>
+          <div class="pay-field"><label class="pay-label">Card Number</label><input class="pay-input" id="cardNum" placeholder="1234 5678 9012 3456" maxlength="19" oninput="formatCard(this)"></div>
+          <div class="pay-row">
+            <div class="pay-field"><label class="pay-label">Expiry</label><input class="pay-input" id="cardExp" placeholder="MM / YY" maxlength="7" oninput="formatExp(this)"></div>
+            <div class="pay-field"><label class="pay-label">CVV</label><input class="pay-input" id="cardCvv" placeholder="•••" maxlength="3" type="password"></div>
+          </div>
+        </div>
+        <div id="upiForm" style="display:none"><div class="pay-field"><label class="pay-label">UPI ID</label><input class="pay-input" id="upiId" placeholder="yourname@upi"></div></div>
+        <div id="nbForm" style="display:none"><div class="pay-field"><label class="pay-label">Bank</label><input class="pay-input" id="nbBank" placeholder="Enter your bank name"></div></div>
+        <button class="pay-now-btn" id="payNowBtn" onclick="doPayment()">
+          <span>👑</span> Pay ₹500 — Activate Premium
+        </button>
+        <div class="pay-secure">🔒 Secured by 256-bit SSL · Cancel anytime</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SUCCESS -->
+<div id="successScreen">
+  <div class="ss-anim" id="ssAnim">👑</div>
+  <div class="ss-title">WELCOME TO PREMIUM!</div>
+  <div class="ss-sub">You now have unlimited access to all 100+ anime titles in Full HD. Enjoy!</div>
+  <button class="ss-btn" onclick="closeSuccess()">Start Watching →</button>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"><span id="toastIcon">✅</span><span id="toastMsg">Done</span></div>
+
+<script>
+/* ═══════════ DATA ═══════════ */
+const FREE_IDS = [16498,5114,21,1535,38000,20,30276,9253,18,32281]; // 10 free
+const ANIME = [
+  {id:16498,title:"Attack on Titan",year:2013,rating:9.1,episodes:87,genres:["Action","Dark Fantasy","Drama"],tags:["action","dark"],trailer:"MGRm3UNZOO4",desc:"Humanity fights behind massive walls against giant Titans. Eren Yeager vows to destroy them all after witnessing unspeakable tragedy.",featured:true},
+  {id:5114,title:"Fullmetal Alchemist: Brotherhood",year:2009,rating:9.1,episodes:64,genres:["Action","Fantasy","Adventure"],tags:["action","fantasy"],trailer:"--IcmZkvL0Q",desc:"Two brothers use alchemy to restore their bodies, uncovering a dark conspiracy threatening their entire nation.",featured:true},
+  {id:21,title:"One Piece",year:1999,rating:9.0,episodes:1100,genres:["Action","Adventure","Comedy"],tags:["action","adventure"],trailer:"S8_YwFLCh4U",desc:"Monkey D. Luffy sails to find the legendary One Piece and become King of the Pirates.",featured:true},
+  {id:1535,title:"Death Note",year:2006,rating:9.0,episodes:37,genres:["Thriller","Mystery","Supernatural"],tags:["thriller","mystery"],trailer:"NlJZ-YgAt-c",desc:"A high school student finds a supernatural notebook that grants the power to kill anyone whose name is written in it.",featured:true},
+  {id:38000,title:"Demon Slayer",year:2019,rating:8.7,episodes:44,genres:["Action","Fantasy","Drama"],tags:["action","dark"],trailer:"VQGCKyvzIM4",desc:"Tanjiro becomes a demon slayer after his family is slaughtered and his sister transformed into a demon.",featured:true},
+  {id:20,title:"Naruto / Shippuden",year:2002,rating:8.3,episodes:720,genres:["Action","Adventure","Fantasy"],tags:["action","fantasy"],trailer:"QczGoCmX0iI",desc:"A young ninja with a demon fox sealed inside him dreams of becoming the greatest Hokage in his village.",featured:true},
+  {id:40748,title:"Jujutsu Kaisen",year:2020,rating:8.7,episodes:47,genres:["Action","Dark Fantasy","Horror"],tags:["action","dark"],trailer:"4A_V-ovJFNw",desc:"A teenager swallows a cursed talisman and joins secret Jujutsu Sorcerers battling cursed spirits.",featured:true},
+  {id:9253,title:"Steins;Gate",year:2011,rating:9.1,episodes:24,genres:["Sci-Fi","Thriller","Romance"],tags:["scifi","thriller"],trailer:"27OZc-ku6is",desc:"A self-proclaimed mad scientist accidentally discovers time travel, leading to catastrophic consequences."},
+  {id:11061,title:"Hunter x Hunter",year:2011,rating:9.0,episodes:148,genres:["Action","Adventure","Fantasy"],tags:["action","adventure"],trailer:"d6kBeJjTGnY",desc:"Gon Freecss discovers his father is a legendary Hunter and sets out on an epic journey to find him.",featured:true},
+  {id:44511,title:"Chainsaw Man",year:2022,rating:8.5,episodes:12,genres:["Action","Dark Fantasy","Horror"],tags:["action","dark"],trailer:"dNJiCrAOXcs",desc:"A young devil hunter merges with his chainsaw demon to become Chainsaw Man, the most feared devil hunter.",featured:true},
+  {id:30,title:"Neon Genesis Evangelion",year:1995,rating:8.5,episodes:26,genres:["Mecha","Sci-Fi","Psychological"],tags:["mecha","scifi"],trailer:"dU1_4RaaNUI",desc:"Teenage pilots operate giant mechas to fight mysterious creatures threatening humanity."},
+  {id:1575,title:"Code Geass",year:2006,rating:8.7,episodes:50,genres:["Mecha","Thriller","Sci-Fi"],tags:["mecha","thriller"],trailer:"mLv1SHnF9G8",desc:"An exiled prince gets the power of absolute obedience and leads a rebellion against the Holy Britannian Empire."},
+  {id:37521,title:"Vinland Saga",year:2019,rating:8.7,episodes:48,genres:["Action","Historical","Drama"],tags:["action","drama"],trailer:"3sG04z4NiMM",desc:"A young Viking warrior seeks revenge against the man who murdered his father in this brutal historical epic."},
+  {id:31964,title:"My Hero Academia",year:2016,rating:8.4,episodes:138,genres:["Action","Superhero","School"],tags:["action","fantasy"],trailer:"EPVkclyLniu",desc:"In a world where most people have superpowers, a powerless boy is chosen by the world's greatest hero."},
+  {id:32281,title:"Your Name",year:2016,rating:9.0,episodes:1,genres:["Romance","Fantasy","Drama"],tags:["romance","movie"],trailer:"xU47nhruN-Q",desc:"Two strangers find they are mysteriously living each other's lives in a fantastical body-swapping love story."},
+  {id:37999,title:"Kaguya-sama: Love is War",year:2019,rating:8.6,episodes:37,genres:["Romance","Comedy"],tags:["romance","comedy"],trailer:"f1EFn-ywNIM",desc:"Two genius student council members are in love but too proud to confess — romance becomes psychological warfare."},
+  {id:19,title:"Monster",year:2004,rating:8.8,episodes:74,genres:["Thriller","Mystery","Drama"],tags:["thriller","mystery"],trailer:"flisBVbMEVs",desc:"A brilliant surgeon becomes entangled in a dark conspiracy involving a serial killer he once saved."},
+  {id:30276,title:"One-Punch Man",year:2015,rating:8.8,episodes:24,genres:["Action","Comedy","Superhero"],tags:["action","comedy"],trailer:"g-PIKxS6Hfc",desc:"A hero who defeats every enemy with a single punch is bored by his overwhelming strength."},
+  {id:52991,title:"Frieren: Beyond Journey's End",year:2023,rating:9.4,episodes:28,genres:["Fantasy","Drama","Adventure"],tags:["fantasy","drama"],trailer:"2ZBkjPRDz0Q",desc:"An elven mage journeys to understand human connections after centuries of indifference to her companions.",featured:true},
+  {id:55791,title:"Oshi no Ko",year:2023,rating:8.6,episodes:11,genres:["Drama","Thriller","Supernatural"],tags:["thriller","drama"],trailer:"UlsRL6FMcSo",desc:"A doctor reincarnated as his favorite idol's child uncovers the dark side of the entertainment industry.",featured:true},
+  {id:34572,title:"Black Clover",year:2017,rating:8.2,episodes:170,genres:["Action","Fantasy","Adventure"],tags:["action","fantasy"],trailer:"W8A_Sj8BbDs",desc:"A boy born without magic in a magical world aims to become the Wizard King through sheer willpower."},
+  {id:20583,title:"Haikyu!!",year:2014,rating:9.0,episodes:85,genres:["Sports","Drama","Comedy"],tags:["sports","drama"],trailer:"deslERST8wQ",desc:"A short boy with incredible natural talent joins a high school volleyball team and aims for nationals."},
+  {id:13601,title:"Psycho-Pass",year:2012,rating:8.4,episodes:22,genres:["Sci-Fi","Thriller","Action"],tags:["scifi","thriller"],trailer:"wQvgOg2AXO8",desc:"In a dystopian future, police measure criminal intent to arrest potential criminals before crimes occur."},
+  {id:42310,title:"Cyberpunk: Edgerunners",year:2022,rating:8.6,episodes:10,genres:["Sci-Fi","Action","Drama"],tags:["scifi","action"],trailer:"pMD8rBEVBU8",desc:"A street kid becomes a mercenary outlaw in the violent, cyber-enhanced city of Night City.",featured:true},
+  {id:28851,title:"A Silent Voice",year:2016,rating:9.0,episodes:1,genres:["Drama","Romance","School"],tags:["romance","drama","movie"],trailer:"nfK6UgLra7g",desc:"A former bully seeks forgiveness from the deaf girl he tormented in elementary school."},
+  {id:33352,title:"Violet Evergarden",year:2018,rating:8.9,episodes:13,genres:["Drama","Fantasy","Romance"],tags:["drama","romance"],trailer:"0CJeDetA45Q",desc:"A former child soldier learns to write letters for others to understand the meaning of love."},
+  {id:38691,title:"Dr. STONE",year:2019,rating:8.3,episodes:58,genres:["Sci-Fi","Adventure","Action"],tags:["scifi","adventure"],trailer:"V21EK0BKWII",desc:"After humanity is petrified, a genius teenager uses science to rebuild civilization from scratch."},
+  {id:47,title:"Akira",year:1988,rating:8.2,episodes:1,genres:["Sci-Fi","Dark","Action"],tags:["scifi","dark","movie"],trailer:"ZSBq8geuJk0",desc:"In dystopian Neo-Tokyo, a biker gang member tries to save his friend who develops catastrophic psychic powers."},
+  {id:2001,title:"Gurren Lagann",year:2007,rating:8.7,episodes:27,genres:["Mecha","Action","Sci-Fi"],tags:["mecha","action"],trailer:"d6kBeJjTGnY",desc:"A young digger discovers a giant mech and leads a rebellion against the oppressive rulers of the surface."},
+  {id:31240,title:"Re:Zero",year:2016,rating:8.4,episodes:50,genres:["Isekai","Fantasy","Thriller"],tags:["isekai","dark"],trailer:"0NWBM3bON7Y",desc:"A boy transported to a fantasy world discovers he can return from death, reliving traumatic events."},
+  {id:39535,title:"Mushoku Tensei",year:2021,rating:8.5,episodes:23,genres:["Isekai","Fantasy","Adventure"],tags:["isekai","fantasy"],trailer:"4bSMkXNvB2c",desc:"A shut-in is reincarnated into a fantasy world and vows to live life to the fullest without regrets."},
+  {id:918,title:"Gintama",year:2006,rating:9.0,episodes:367,genres:["Comedy","Action","Sci-Fi"],tags:["comedy","action"],trailer:"C3qcl6p9k24",desc:"A samurai and his friends take on odd jobs in an alternate Edo-period Japan occupied by aliens."},
+  {id:23273,title:"Your Lie in April",year:2014,rating:8.7,episodes:22,genres:["Music","Romance","Drama"],tags:["romance","drama"],trailer:"TNV9LlGLjP0",desc:"A pianist who lost his ability to hear the piano meets a violinist who changes his life forever."},
+  {id:1,title:"Cowboy Bebop",year:1998,rating:8.9,episodes:26,genres:["Sci-Fi","Action","Noir"],tags:["scifi","action"],trailer:"ByXuk9QqQkk",desc:"A ragtag group of bounty hunters travel the solar system chasing criminals in this jazz-infused space noir."},
+  {id:11757,title:"Sword Art Online",year:2012,rating:7.8,episodes:98,genres:["Isekai","Sci-Fi","Action"],tags:["isekai","action"],trailer:"6ohYYalaANI",desc:"Thousands of players are trapped inside a virtual reality game where death means death in real life."},
+  {id:58517,title:"Solo Leveling",year:2024,rating:8.9,episodes:12,genres:["Action","Fantasy","Isekai"],tags:["action","fantasy"],trailer:"8t0DRuDhDZY",desc:"The world's weakest hunter gains the unique ability to grow stronger after each battle he survives.",featured:true},
+  {id:431,title:"Spirited Away",year:2001,rating:9.4,episodes:1,genres:["Fantasy","Adventure","Family"],tags:["fantasy","movie"],trailer:"ByXuk9QqQkk",desc:"A girl gets trapped in a spirit world and must find a way to free herself and her transformed parents."},
+  {id:164,title:"Princess Mononoke",year:1997,rating:9.0,episodes:1,genres:["Fantasy","Action","Drama"],tags:["fantasy","action","movie"],trailer:"4OiMPZ9sp9o",desc:"A young warrior becomes caught between a forest god's curse and the forces of industrialization."},
+  {id:32182,title:"Mob Psycho 100",year:2016,rating:8.8,episodes:37,genres:["Action","Comedy","Supernatural"],tags:["action","comedy"],trailer:"A-S1p_HKj-I",desc:"A psychic teenager tries to live normally while his repressed emotions build to a catastrophic breaking point."},
+  {id:9989,title:"AnoHana",year:2011,rating:8.5,episodes:11,genres:["Drama","Romance","Supernatural"],tags:["romance","drama"],trailer:"oN4UMbZ3fBU",desc:"A ghost of a childhood friend returns and asks her old friends to fulfill her final wish."},
+];
+
+/* ═══ QUEUE ═══ */
+let imgQ=[],qR=false;
+function enqI(fn){imgQ.push(fn);if(!qR)runQ();}
+async function runQ(){qR=true;while(imgQ.length){const fn=imgQ.shift();try{await fn();}catch(e){}await sl(380);}qR=false;}
+const sl=ms=>new Promise(r=>setTimeout(r,ms));
+async function loadImg(malId,imgEl,q){
+  try{const r=await fetch(`https://api.jikan.moe/v4/anime/${malId}`);const d=await r.json();const u=d?.data?.images?.jpg?.large_image_url||d?.data?.images?.jpg?.image_url;if(u){imgEl.src=u;imgEl.onload=()=>imgEl.classList.add('loaded');}else throw 0;}
+  catch{try{const r2=await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=1&sfw`);const d2=await r2.json();const u2=d2?.data?.[0]?.images?.jpg?.large_image_url;if(u2){imgEl.src=u2;imgEl.onload=()=>imgEl.classList.add('loaded');}}catch{}}
+}
+
+/* ═══ STATE ═══ */
+// curUser and watchlist are set by the Firebase onAuthStateChanged listener above
+window.curUser = window.curUser || null;
+window.watchlist = window.watchlist || [];
+let heroIdx=0,heroTimer=null;
+const featured = ANIME.filter(a=>a.featured);
+
+function isFree(id){return FREE_IDS.includes(id);}
+function isPremium(){return curUser&&curUser.plan==='premium';}
+function canWatch(id){return isPremium()||isFree(id);}
+
+/* ═══ AUTH ═══ */
+function switchTab(t){
+  document.getElementById('tabLogin').classList.toggle('active',t==='login');
+  document.getElementById('tabReg').classList.toggle('active',t==='register');
+  document.getElementById('loginForm').style.display=t==='login'?'block':'none';
+  document.getElementById('regForm').style.display=t==='register'?'block':'none';
+}
+function showErr(id,msg){const e=document.getElementById(id);e.textContent=msg;e.style.display='block';}
+function hideErr(id){document.getElementById(id).style.display='none';}
+
+async function doLogin(){
+  const email=document.getElementById('li-email').value.trim();
+  const pass=document.getElementById('li-pass').value;
+  hideErr('li-err');
+  if(!email||!pass){showErr('li-err','Please fill in all fields.');return;}
+  const btn=document.querySelector('#loginForm .auth-btn');
+  btn.disabled=true;btn.textContent='Signing in…';
+  try{
+    const {auth,signInWithEmailAndPassword}=window._fb;
+    await signInWithEmailAndPassword(auth,email,pass);
+    // onAuthStateChanged will call enterApp()
+  } catch(err){
+    const msg=err.code==='auth/user-not-found'||err.code==='auth/wrong-password'||err.code==='auth/invalid-credential'
+      ?'Incorrect email or password.'
+      :err.code==='auth/invalid-email'?'Invalid email address.'
+      :err.message||'Sign in failed.';
+    showErr('li-err',msg);
+  } finally{btn.disabled=false;btn.textContent='Sign In →';}
+}
+
+async function doRegister(){
+  const name=document.getElementById('rg-name').value.trim();
+  const email=document.getElementById('rg-email').value.trim();
+  const pass=document.getElementById('rg-pass').value;
+  hideErr('rg-err');
+  if(!name||!email||!pass){showErr('rg-err','Please fill in all fields.');return;}
+  if(pass.length<6){showErr('rg-err','Password must be at least 6 characters.');return;}
+  const btn=document.querySelector('#regForm .auth-btn');
+  btn.disabled=true;btn.textContent='Creating account…';
+  try{
+    const {auth,db,createUserWithEmailAndPassword,updateProfile,doc,setDoc}=window._fb;
+    const cred=await createUserWithEmailAndPassword(auth,email,pass);
+    await updateProfile(cred.user,{displayName:name});
+    const userData={name,email,plan:'free',joinedAt:new Date().toISOString()};
+    await setDoc(doc(db,'users',cred.user.uid),userData);
+    await setDoc(doc(db,'watchlists',cred.user.uid),{items:[]});
+    // onAuthStateChanged will call enterApp()
+  } catch(err){
+    const msg=err.code==='auth/email-already-in-use'?'An account with this email already exists.'
+      :err.code==='auth/invalid-email'?'Invalid email address.'
+      :err.message||'Registration failed.';
+    showErr('rg-err',msg);
+  } finally{btn.disabled=false;btn.textContent='Create Account →';}
+}
+
+async function demoLogin(){
+  hideErr('li-err');
+  const btn=document.querySelector('#loginForm .social-btn');
+  btn.disabled=true;btn.textContent='Signing in…';
+  try{
+    const {auth,db,createUserWithEmailAndPassword,signInWithEmailAndPassword,updateProfile,doc,setDoc,getDoc}=window._fb;
+    const demoEmail='demo@animax.app',demoPass='animax_demo_2024';
+    try{
+      await signInWithEmailAndPassword(auth,demoEmail,demoPass);
+    } catch(e){
+      if(e.code==='auth/user-not-found'||e.code==='auth/invalid-credential'){
+        const cred=await createUserWithEmailAndPassword(auth,demoEmail,demoPass);
+        await updateProfile(cred.user,{displayName:'Demo User'});
+        await setDoc(doc(db,'users',cred.user.uid),{name:'Demo User',email:demoEmail,plan:'free',joinedAt:new Date().toISOString()});
+        await setDoc(doc(db,'watchlists',cred.user.uid),{items:[]});
+      } else throw e;
+    }
+  } catch(err){
+    showErr('li-err','Demo login failed: '+err.message);
+  } finally{btn.disabled=false;btn.innerHTML='🎌 &nbsp;Sign in as Demo User';}
+}
+
+async function doLogout(){
+  const {auth,signOut}=window._fb;
+  await signOut(auth);
+  curUser=null;watchlist=[];
+  // onAuthStateChanged will call showAuth()
+}
+
+function showAuth(){
+  document.getElementById('authPage').classList.add('active');
+  document.getElementById('appPage').classList.remove('active');
+  document.getElementById('appPage').style.display='none';
+}
+function enterApp(){
+  document.getElementById('authPage').classList.remove('active');
+  document.getElementById('appPage').classList.add('active');
+  document.getElementById('appPage').style.display='block';
+  initApp();
+}
+
+/* ═══ APP INIT ═══ */
+function initApp(){
+  updateNavUI();
+  buildHeroDots();goHero(0);startHeroTimer();
+  buildRows();
+  updateFreeBanner();
+}
+function updateNavUI(){
+  if(!curUser) return;
+  const initials=curUser.name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+  document.getElementById('navAvatar').textContent=initials;
+  if(isPremium()) document.getElementById('navAvatar').classList.add('premium-ring');
+  document.getElementById('pdName').textContent=curUser.name;
+  document.getElementById('pdEmail').textContent=curUser.email;
+  const pb=document.getElementById('planBadge');
+  const pdPB=document.getElementById('pdPlanBadge');
+  if(isPremium()){
+    pb.textContent='PREMIUM';pb.className='nav-badge badge-premium';
+    pdPB.innerHTML='👑 Premium Member';pdPB.style.cssText='background:rgba(251,191,36,0.15);border:0.5px solid rgba(251,191,36,0.3);color:var(--gold);';
+    document.getElementById('pdUpgradeItem').innerHTML='👑 &nbsp;Manage Premium';
+  } else {
+    pb.textContent='FREE';pb.className='nav-badge badge-free';
+    pdPB.innerHTML='🆓 Free Plan';pdPB.style.cssText='background:rgba(107,107,154,0.15);border:0.5px solid rgba(107,107,154,0.3);color:var(--muted);';
+  }
+}
+function updateFreeBanner(){
+  document.getElementById('freeBanner').style.display=isPremium()?'none':'flex';
+}
+
+/* ═══ WATCHLIST ═══ */
+async function saveWL(){
+  if(!curUser||!curUser.uid) return;
+  const {db,doc,setDoc}=window._fb;
+  await setDoc(doc(db,'watchlists',curUser.uid),{items:watchlist});
+}
+function inWL(id){return watchlist.includes(id);}
+async function toggleWL(id){
+  if(inWL(id)){watchlist=watchlist.filter(x=>x!==id);toast('❌','Removed from My List');}
+  else{watchlist.push(id);toast('✅','Added: '+ANIME.find(a=>a.id===id)?.title);}
+  await saveWL();
+}
+
+/* ═══ HERO ═══ */
+function setHero(anime){
+  document.getElementById('hTitle').textContent=anime.title;
+  document.getElementById('hYear').textContent=anime.year;
+  document.getElementById('hRating').textContent='★ '+anime.rating;
+  document.getElementById('hEps').textContent=anime.episodes===1?'Movie':anime.episodes+' Episodes';
+  document.getElementById('hDesc').textContent=anime.desc;
+  const lockBadge=document.getElementById('heroLockBadge');
+  lockBadge.style.display=(!canWatch(anime.id))?'inline-flex':'none';
+  const heroImg=document.getElementById('heroImg');heroImg.src='';heroImg.classList.remove('loaded');
+  enqI(()=>loadImg(anime.id,heroImg,anime.title));
+  const wlBtn=document.getElementById('hWL');
+  wlBtn.textContent=inWL(anime.id)?'✓':'+';
+  wlBtn.className='btn-wl'+(inWL(anime.id)?' added':'');
+  wlBtn.onclick=()=>{toggleWL(anime.id).then(()=>setHero(anime));};
+  document.getElementById('hPlay').onclick=()=>{if(canWatch(anime.id))openVideo(anime.trailer,anime.title);else openUpgrade();};
+  document.getElementById('hMore').onclick=()=>openDetail(anime);
+}
+function buildHeroDots(){
+  const dc=document.getElementById('heroDots');dc.innerHTML='';
+  featured.forEach((_,i)=>{const d=document.createElement('div');d.className='h-dot'+(i===0?' active':'');d.onclick=()=>{clearInterval(heroTimer);goHero(i);startHeroTimer();};dc.appendChild(d);});
+}
+function goHero(i){heroIdx=i;document.querySelectorAll('.h-dot').forEach((d,di)=>d.classList.toggle('active',di===i));setHero(featured[i]);}
+function startHeroTimer(){heroTimer=setInterval(()=>{heroIdx=(heroIdx+1)%featured.length;goHero(heroIdx);},7500);}
+
+/* ═══ ROWS ═══ */
+const ROWS=[
+  {title:'🔥 Trending Now',filter:a=>a.rating>=8.7,badge:'hot'},
+  {title:'⚔️ Action & Adventure',filter:a=>a.tags.includes('action'),badge:''},
+  {title:'🌀 Isekai Worlds',filter:a=>a.tags.includes('isekai'),badge:'new'},
+  {title:'💀 Dark & Psychological',filter:a=>a.tags.includes('dark')||a.tags.includes('thriller'),badge:''},
+  {title:'💕 Romance & Drama',filter:a=>a.tags.includes('romance')||a.tags.includes('drama'),badge:''},
+  {title:'🤖 Sci-Fi & Mecha',filter:a=>a.tags.includes('scifi')||a.tags.includes('mecha'),badge:''},
+  {title:'🎬 Anime Movies',filter:a=>a.tags.includes('movie'),badge:'top'},
+  {title:'🏆 Top Rated (9.0+)',filter:a=>a.rating>=9.0,badge:'top'},
+  {title:'😂 Comedy',filter:a=>a.tags.includes('comedy'),badge:''},
+  {title:'⚽ Sports',filter:a=>a.tags.includes('sports'),badge:''},
+];
+function buildRows(){
+  const wrap=document.getElementById('rowsWrap');wrap.innerHTML='';
+  ROWS.forEach(row=>{
+    const items=ANIME.filter(row.filter).slice(0,18);if(!items.length)return;
+    const sec=document.createElement('div');sec.className='row-sec';
+    sec.innerHTML=`<div class="row-hdr"><div class="row-ttl">${row.title}</div><span class="row-see">See all →</span></div><div class="row-scroll"></div>`;
+    const scroll=sec.querySelector('.row-scroll');
+    items.forEach((anime,i)=>{
+      const locked=!canWatch(anime.id);
+      const badgeHtml=(i===0&&row.badge)?`<div class="ac-badge b-${row.badge}">${row.badge==='hot'?'🔥 HOT':row.badge==='new'?'✦ NEW':'★ TOP'}</div>`:
+        (!locked&&isFree(anime.id)?`<div class="ac-badge b-free">FREE</div>`:'');
+      const lockHtml=locked?`<div class="ac-lock"><div class="lk-icon">🔒</div><div class="lk-text">Premium</div></div>`:'';
+      const card=document.createElement('div');card.className='ac';
+      card.innerHTML=`<div class="ac-img"><div class="ph">${anime.title[0]}</div><img alt="${anime.title}"><div class="ac-ov"><div class="pb">${locked?'🔒':'▶'}</div></div>${lockHtml}</div>${badgeHtml}<div class="ac-info"><div class="ac-ttl">${anime.title}</div><div class="ac-sub">${anime.year} · ★${anime.rating}</div></div>`;
+      card.onclick=()=>openDetail(anime);
+      card.querySelector('.ac-ov').onclick=e=>{e.stopPropagation();if(locked){openUpgrade();}else openVideo(anime.trailer,anime.title);};
+      scroll.appendChild(card);
+      const img=card.querySelector('img');
+      const obs=new IntersectionObserver(entries=>{entries.forEach(en=>{if(en.isIntersecting){obs.disconnect();enqI(()=>loadImg(anime.id,img,anime.title));}});},{rootMargin:'200px'});
+      obs.observe(card);
+    });
+    wrap.appendChild(sec);
+  });
+}
+
+/* ═══ DETAIL ═══ */
+function openDetail(anime){
+  document.getElementById('detailModal').classList.add('open');
+  document.body.style.overflow='hidden';
+  const bImg=document.getElementById('dmImg');bImg.src='';
+  enqI(()=>loadImg(anime.id,bImg,anime.title));
+  document.getElementById('dmTitle').textContent=anime.title;
+  const locked=!canWatch(anime.id);
+  document.getElementById('dmMeta').innerHTML=`<span class="dm-pill p-yr">${anime.year}</span><span class="dm-pill p-ep">${anime.episodes===1?'Movie':anime.episodes+' eps'}</span><span class="dm-pill p-st">${anime.rating>=9?'Masterpiece':'Highly Rated'}</span>${locked?`<span class="dm-pill p-lock">🔒 Premium Only</span>`:''}`;
+  document.getElementById('dmRating').textContent='★ '+anime.rating+' / 10';
+  document.getElementById('dmDesc').textContent=anime.desc;
+  document.getElementById('dmGenres').innerHTML=anime.genres.map(g=>`<span class="g-chip">${g}</span>`).join('');
+  const wlBtn=document.createElement('button');wlBtn.className='btn-ghost';wlBtn.textContent=inWL(anime.id)?'✓ In My List':'+ My List';wlBtn.onclick=()=>{toggleWL(anime.id).then(()=>{wlBtn.textContent=inWL(anime.id)?'✓ In My List':'+ My List';});};
+  const playBtn=document.createElement('button');playBtn.className='btn-play';playBtn.style.flex='1';playBtn.style.justifyContent='center';playBtn.style.padding='12px';
+  if(locked){playBtn.innerHTML='🔒 Unlock with Premium';playBtn.onclick=()=>{closeDetail();openUpgrade();};}
+  else{playBtn.innerHTML='<span class="pi">▶</span> Play Episode 1';playBtn.onclick=()=>openVideo(anime.trailer,anime.title);}
+  const da=document.getElementById('dmActions');da.innerHTML='';da.appendChild(playBtn);da.appendChild(wlBtn);
+  document.getElementById('epCt').textContent=`(${anime.episodes===1?'Movie':anime.episodes+' episodes'})`;
+  const epList=document.getElementById('epList');epList.innerHTML='';
+  const epCount=anime.episodes===1?1:Math.min(anime.episodes,12);
+  for(let i=1;i<=epCount;i++){
+    const epLocked=locked&&i>1;
+    const prog=i===1&&!locked?Math.floor(Math.random()*55+5):0;
+    const ep=document.createElement('div');ep.className='ep-item';
+    ep.innerHTML=`<span class="ep-num">${String(i).padStart(2,'0')}</span><div class="ep-thumb"><div style="font-size:18px">▶</div>${epLocked?`<div class="ep-lock-overlay">🔒</div>`:''}</div><div class="ep-inf"><div class="ep-name">Episode ${i}${i===1?' — Pilot':''}</div><div class="ep-dur">24 min</div>${prog>0?`<div class="ep-prog"><div class="ep-prog-f" style="width:${prog}%"></div></div>`:''}</div>`;
+    ep.onclick=()=>{if(epLocked)openUpgrade();else openVideo(anime.trailer,anime.title+' Ep '+i);};
+    epList.appendChild(ep);
+  }
+  if(anime.episodes>12){const m=document.createElement('div');m.style='padding:10px;text-align:center;color:var(--primary2);font-size:12px;cursor:pointer;';m.textContent=`+ ${anime.episodes-12} more episodes`;epList.appendChild(m);}
+}
+function closeDetail(){document.getElementById('detailModal').classList.remove('open');document.body.style.overflow='';}
+document.getElementById('detailModal').addEventListener('click',e=>{if(e.target===document.getElementById('detailModal'))closeDetail();});
+
+/* ═══ VIDEO ═══ */
+function openVideo(ytId,title){
+  document.getElementById('vmFrame').src=`https://www.youtube.com/embed/${ytId}?autoplay=1&rel=0`;
+  document.getElementById('videoModal').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeVideo(){document.getElementById('vmFrame').src='';document.getElementById('videoModal').classList.remove('open');document.body.style.overflow='';}
+document.getElementById('videoModal').addEventListener('click',e=>{if(e.target===document.getElementById('videoModal'))closeVideo();});
+
+/* ═══ UPGRADE ═══ */
+function openUpgrade(){
+  if(isPremium()){toast('👑','You are already a Premium member!');return;}
+  document.getElementById('upgradeModal').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeUpgrade(){document.getElementById('upgradeModal').classList.remove('open');document.body.style.overflow='';}
+document.getElementById('upgradeModal').addEventListener('click',e=>{if(e.target===document.getElementById('upgradeModal'))closeUpgrade();});
+
+let selPayMethod='card';
+function selectPayMethod(btn){
+  document.querySelectorAll('.pay-method').forEach(b=>b.classList.remove('selected'));
+  btn.classList.add('selected');
+  const t=btn.textContent.includes('UPI')?'upi':btn.textContent.includes('Net')?'nb':'card';
+  selPayMethod=t;
+  document.getElementById('cardForm').style.display=t==='card'?'block':'none';
+  document.getElementById('upiForm').style.display=t==='upi'?'block':'none';
+  document.getElementById('nbForm').style.display=t==='nb'?'block':'none';
+}
+function formatCard(el){let v=el.value.replace(/\D/g,'').substring(0,16);el.value=v.replace(/(.{4})/g,'$1 ').trim();}
+function formatExp(el){let v=el.value.replace(/\D/g,'');if(v.length>=2)v=v.substring(0,2)+' / '+v.substring(2,4);el.value=v;}
+
+async function doPayment(){
+  const btn=document.getElementById('payNowBtn');
+  if(selPayMethod==='card'){
+    const num=document.getElementById('cardNum').value.replace(/\s/g,'');
+    const exp=document.getElementById('cardExp').value;
+    const cvv=document.getElementById('cardCvv').value;
+    const name=document.getElementById('cardName').value.trim();
+    if(!name||num.length<16||!exp||cvv.length<3){toast('⚠️','Please fill in all payment details.');return;}
+  } else if(selPayMethod==='upi'){
+    if(!document.getElementById('upiId').value.trim()){toast('⚠️','Please enter your UPI ID.');return;}
+  } else {
+    if(!document.getElementById('nbBank').value.trim()){toast('⚠️','Please enter your bank name.');return;}
+  }
+  btn.disabled=true;btn.textContent='Processing payment…';
+  setTimeout(async()=>{
+    await activatePremium();
+    btn.disabled=false;btn.innerHTML='<span>👑</span> Pay ₹500 — Activate Premium';
+  },2200);
+}
+
+async function activatePremium(){
+  curUser.plan='premium';
+  if(curUser.uid){
+    const {db,doc,updateDoc}=window._fb;
+    await updateDoc(doc(db,'users',curUser.uid),{plan:'premium'});
+  }
+  closeUpgrade();
+  document.getElementById('successScreen').classList.add('open');
+}
+
+function closeSuccess(){
+  document.getElementById('successScreen').classList.remove('open');
+  document.body.style.overflow='';
+  updateNavUI();updateFreeBanner();buildRows();buildHeroDots();goHero(0);
+  toast('👑','Welcome to Premium! Enjoy unlimited anime.');
+}
+
+/* ═══ NAVIGATION ═══ */
+function goHome(){
+  document.getElementById('homeView').style.display='block';
+  document.getElementById('wlPage').classList.remove('active');
+  document.getElementById('nlHome').classList.add('active');
+}
+function goWL(){
+  document.getElementById('homeView').style.display='none';
+  document.getElementById('wlPage').classList.add('active');
+  document.getElementById('nlHome').classList.remove('active');
+  buildWLPage();
+}
+function buildWLPage(){
+  const grid=document.getElementById('wlGrid');const sub=document.getElementById('wlSub');grid.innerHTML='';
+  if(!watchlist.length){sub.textContent='Nothing saved yet. Start exploring!';return;}
+  sub.textContent=`${watchlist.length} saved`;
+  ANIME.filter(a=>watchlist.includes(a.id)).forEach(anime=>{
+    const locked=!canWatch(anime.id);
+    const c=document.createElement('div');c.className='ac';c.style='width:100%';
+    c.innerHTML=`<div class="ac-img"><div class="ph">${anime.title[0]}</div><img alt="${anime.title}"><div class="ac-ov"><div class="pb">${locked?'🔒':'▶'}</div></div>${locked?`<div class="ac-lock"><div class="lk-icon">🔒</div><div class="lk-text">Premium</div></div>`:''}</div><div class="ac-info"><div class="ac-ttl">${anime.title}</div><div class="ac-sub">★${anime.rating}</div></div>`;
+    const img=c.querySelector('img');enqI(()=>loadImg(anime.id,img,anime.title));
+    c.onclick=()=>openDetail(anime);
+    c.querySelector('.ac-ov').onclick=e=>{e.stopPropagation();if(locked)openUpgrade();else openVideo(anime.trailer,anime.title);};
+    grid.appendChild(c);
+  });
+}
+
+/* ═══ SEARCH ═══ */
+function toggleSearch(){
+  const o=document.getElementById('srchOv');o.classList.toggle('open');
+  if(o.classList.contains('open')){document.getElementById('srchInput').value='';document.getElementById('srchResults').innerHTML='';document.getElementById('srchInput').focus();document.body.style.overflow='hidden';}
+  else document.body.style.overflow='';
+}
+function doSearch(q){
+  const res=document.getElementById('srchResults');if(!q.trim()){res.innerHTML='';return;}
+  const hits=ANIME.filter(a=>a.title.toLowerCase().includes(q.toLowerCase())||a.genres.some(g=>g.toLowerCase().includes(q.toLowerCase())));
+  res.innerHTML='';
+  if(!hits.length){res.innerHTML=`<p style="color:var(--muted);font-size:14px;padding:16px 0">No results for "${q}"</p>`;return;}
+  hits.forEach(anime=>{
+    const locked=!canWatch(anime.id);
+    const c=document.createElement('div');c.className='ac';c.style='cursor:pointer';
+    c.innerHTML=`<div class="ac-img"><div class="ph">${anime.title[0]}</div><img alt="${anime.title}"><div class="ac-ov"><div class="pb">${locked?'🔒':'▶'}</div></div>${locked?`<div class="ac-lock"><div class="lk-icon">🔒</div><div class="lk-text">Premium</div></div>`:''}</div><div class="ac-info"><div class="ac-ttl">${anime.title}</div><div class="ac-sub">${anime.year} · ★${anime.rating}</div></div>`;
+    const img=c.querySelector('img');enqI(()=>loadImg(anime.id,img,anime.title));
+    c.onclick=()=>{toggleSearch();openDetail(anime);};
+    c.querySelector('.ac-ov').onclick=e=>{e.stopPropagation();if(locked){toggleSearch();openUpgrade();}else{toggleSearch();openVideo(anime.trailer,anime.title);}};
+    res.appendChild(c);
+  });
+}
+
+/* ═══ TOAST ═══ */
+function toast(icon,msg){
+  document.getElementById('toastIcon').textContent=icon;
+  document.getElementById('toastMsg').textContent=msg;
+  const t=document.getElementById('toast');t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2800);
+}
+
+/* ═══ MISC ═══ */
+window.addEventListener('scroll',()=>document.getElementById('mainNav')?.classList.toggle('scrolled',window.scrollY>10));
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeVideo();closeDetail();closeUpgrade();if(document.getElementById('srchOv').classList.contains('open'))toggleSearch();}});
+
+/* ═══ BOOT ═══ */
+// Auth is handled by Firebase onAuthStateChanged listener in the module script above.
+// Show auth page by default until Firebase resolves the session.
+document.getElementById('authPage').classList.add('active');
+document.getElementById('appPage').style.display='none';
+</script>
+</body>
+</html>
