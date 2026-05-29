@@ -69,6 +69,7 @@ nav.scrolled{background:rgba(6,6,16,0.97);backdrop-filter:blur(20px);border-bott
 .nav-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--accent));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:2px solid transparent;transition:border-color 0.2s;}
 .nav-avatar:hover{border-color:var(--primary2);}
 .nav-avatar.premium-ring{border-color:var(--gold);}
+/* Profile dropdown */
 .profile-dropdown{position:absolute;top:calc(100% + 10px);right:0;width:220px;background:var(--card2);border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.6);display:none;z-index:200;}
 .nav-profile-btn:hover .profile-dropdown{display:block;}
 .pd-header{padding:14px 16px;border-bottom:0.5px solid var(--border);}
@@ -207,6 +208,7 @@ nav.scrolled{background:rgba(6,6,16,0.97);backdrop-filter:blur(20px);border-bott
 .um-title{font-family:'Bebas Neue',sans-serif;font-size:38px;letter-spacing:3px;background:linear-gradient(90deg,var(--gold),#f97316);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
 .um-subtitle{font-size:13px;color:var(--muted);margin-top:6px;}
 .um-body{padding:28px 32px;}
+/* Plans comparison */
 .plans-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:24px;}
 .plan-card{border-radius:var(--radius);padding:18px;border:1.5px solid var(--border);position:relative;transition:border-color 0.2s;}
 .plan-card.free-plan{background:rgba(255,255,255,0.02);}
@@ -220,6 +222,7 @@ nav.scrolled{background:rgba(6,6,16,0.97);backdrop-filter:blur(20px);border-bott
 .plan-card .pf .tick{color:var(--green);font-size:11px;margin-top:1px;flex-shrink:0;}
 .plan-card .pf .cross{color:var(--muted2);font-size:11px;margin-top:1px;flex-shrink:0;}
 .plan-badge-best{position:absolute;top:-1px;right:12px;background:var(--gold);color:#000;font-size:9px;font-weight:700;padding:2px 8px;border-radius:0 0 6px 6px;letter-spacing:1px;}
+/* Payment form */
 .pay-section{border-top:0.5px solid var(--border);padding-top:22px;}
 .pay-title{font-size:13px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:6px;}
 .pay-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
@@ -486,47 +489,46 @@ footer p{font-size:11px;color:var(--muted);letter-spacing:1.5px;}
 <!-- TOAST -->
 <div class="toast" id="toast"><span id="toastIcon">✅</span><span id="toastMsg">Done</span></div>
 
+<!-- Firebase SDK -->
 <script type="module">
-  // Import Firebase Modular SDKs
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-  import {
-    getAuth,
-    createUserWithEmailAndPassword,
-    signInWithEmailAndPassword,
-    signOut,
-    onAuthStateChanged
-  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-  import {
-    getFirestore,
-    doc,
-    setDoc,
-    getDoc,
-    updateDoc,
-    arrayUnion,
-    arrayRemove
-  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-  // Your Firebase Configuration
-  const firebaseConfig = {
-    apiKey: "AIzaSyA8QsJX5VWECvdj9rOOCgbG1-rADo9nRK8",
-    authDomain: "anime-ott-e143e.firebaseapp.com",
-    projectId: "anime-ott-e143e",
-    storageBucket: "anime-ott-e143e.firebasestorage.app",
-    messagingSenderId: "1018788038093",
-    appId: "1:1018788038093:web:e3b7e6aeabbd8e2bd1f084",
-    measurementId: "G-FYZ4QHEHYP"
-  };
+const firebaseConfig = {
+  apiKey: "AIzaSyA8QsJX5VWECvdj9rOOCgbG1-rADo9nRK8",
+  authDomain: "anime-ott-e143e.firebaseapp.com",
+  projectId: "anime-ott-e143e",
+  storageBucket: "anime-ott-e143e.firebasestorage.app",
+  messagingSenderId: "1018788038093",
+  appId: "1:1018788038093:web:e3b7e6aeabbd8e2bd1f084",
+  measurementId: "G-FYZ4QHEHYP"
+};
 
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const db = getFirestore(app);
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
-  // Global State (Replaces LocalStorage)
-  let curUser = null;
-  let watchlist = [];
+/* ══════════ FIRESTORE HELPERS ══════════ */
+async function fbGetUser(email) {
+  const ref = doc(db, 'users', email);
+  const snap = await getDoc(ref);
+  return snap.exists() ? snap.data() : null;
+}
+async function fbCreateUser(user) {
+  await setDoc(doc(db, 'users', user.email), user);
+}
+async function fbUpdateUser(email, data) {
+  await updateDoc(doc(db, 'users', email), data);
+}
+async function fbGetWL(userId) {
+  const ref = doc(db, 'watchlists', String(userId));
+  const snap = await getDoc(ref);
+  return snap.exists() ? (snap.data().list || []) : [];
+}
+async function fbSaveWL(userId, list) {
+  await setDoc(doc(db, 'watchlists', String(userId)), { list });
+}
 
-  /* ═══════════ DATA ═══════════ */
+/* ═══════════ DATA ═══════════ */
 const FREE_IDS = [16498,5114,21,1535,38000,20,30276,9253,18,32281]; // 10 free
 const ANIME = [
   {id:16498,title:"Attack on Titan",year:2013,rating:9.1,episodes:87,genres:["Action","Dark Fantasy","Drama"],tags:["action","dark"],trailer:"MGRm3UNZOO4",desc:"Humanity fights behind massive walls against giant Titans. Eren Yeager vows to destroy them all after witnessing unspeakable tragedy.",featured:true},
@@ -582,7 +584,7 @@ async function loadImg(malId,imgEl,q){
 }
 
 /* ═══ STATE ═══ */
-let curUser = null;
+let curUser = JSON.parse(sessionStorage.getItem('animax_user')||'null'); // session only; source of truth is Firestore
 let watchlist = [];
 let heroIdx=0,heroTimer=null;
 const featured = ANIME.filter(a=>a.featured);
@@ -591,26 +593,7 @@ function isFree(id){return FREE_IDS.includes(id);}
 function isPremium(){return curUser&&curUser.plan==='premium';}
 function canWatch(id){return isPremium()||isFree(id);}
 
-async function fetchUserProfile(uid){
-  const snap = await getDoc(doc(db, 'users', uid));
-  return snap.exists() ? {uid, ...snap.data()} : null;
-}
-
-async function saveUserProfile(profile){
-  if(!profile?.uid) return;
-  await setDoc(doc(db, 'users', profile.uid), profile, {merge:true});
-}
-
-async function updateUserProfile(uid, updates){
-  if(!uid) return;
-  await updateDoc(doc(db, 'users', uid), updates);
-}
-
-async function syncUserState(userDoc){
-  curUser = {...userDoc};
-  watchlist = Array.isArray(curUser.watchlist) ? [...curUser.watchlist] : [];
-}
-
+/* ═══ AUTH ═══ */
 function switchTab(t){
   document.getElementById('tabLogin').classList.toggle('active',t==='login');
   document.getElementById('tabReg').classList.toggle('active',t==='register');
@@ -625,13 +608,18 @@ async function doLogin(){
   const pass=document.getElementById('li-pass').value;
   hideErr('li-err');
   if(!email||!pass){showErr('li-err','Please fill in all fields.');return;}
+  const btn=document.querySelector('#loginForm .auth-btn');
+  btn.textContent='Signing in…';btn.disabled=true;
   try{
-    await signInWithEmailAndPassword(auth, email, pass);
-  } catch(error){
-    showErr('li-err','Incorrect email or password.');
-  }
+    const user=await fbGetUser(email);
+    if(!user||user.password!==pass){showErr('li-err','Incorrect email or password.');return;}
+    curUser={...user};
+    sessionStorage.setItem('animax_user',JSON.stringify(curUser));
+    watchlist=await fbGetWL(curUser.id);
+    enterApp();
+  }catch(e){showErr('li-err','Connection error. Please try again.');}
+  finally{btn.textContent='Sign In →';btn.disabled=false;}
 }
-
 async function doRegister(){
   const name=document.getElementById('rg-name').value.trim();
   const email=document.getElementById('rg-email').value.trim();
@@ -639,36 +627,28 @@ async function doRegister(){
   hideErr('rg-err');
   if(!name||!email||!pass){showErr('rg-err','Please fill in all fields.');return;}
   if(pass.length<6){showErr('rg-err','Password must be at least 6 characters.');return;}
+  const btn=document.querySelector('#regForm .auth-btn');
+  btn.textContent='Creating account…';btn.disabled=true;
   try{
-    const credential = await createUserWithEmailAndPassword(auth, email, pass);
-    const user = credential.user;
-    const userData = {
-      uid: user.uid,
-      name: name,
-      email: email,
-      plan: 'free',
-      joinedAt: new Date().toISOString(),
-      watchlist: []
-    };
-    await setDoc(doc(db, 'users', user.uid), userData);
-  } catch(error){
-    if(error.code==='auth/email-already-in-use') showErr('rg-err','An account with this email already exists.');
-    else showErr('rg-err','Registration failed. Please try again.');
-  }
+    const existing=await fbGetUser(email);
+    if(existing){showErr('rg-err','An account with this email already exists.');return;}
+    const newUser={id:Date.now(),name,email,password:pass,plan:'free',joinedAt:new Date().toISOString()};
+    await fbCreateUser(newUser);
+    curUser={...newUser};
+    sessionStorage.setItem('animax_user',JSON.stringify(curUser));
+    watchlist=[];
+    enterApp();
+  }catch(e){showErr('rg-err','Connection error. Please try again.');}
+  finally{btn.textContent='Create Account →';btn.disabled=false;}
 }
-
 async function demoLogin(){
-  document.getElementById('li-email').value='demo@animax.app';
-  document.getElementById('li-pass').value='demopass123';
-  await doLogin();
+  curUser={id:1,name:'Demo User',email:'demo@animax.app',plan:'free',joinedAt:new Date().toISOString()};
+  sessionStorage.setItem('animax_user',JSON.stringify(curUser));
+  watchlist=await fbGetWL(curUser.id).catch(()=>[]);
+  enterApp();
 }
-
-async function doLogout(){
-  try{
-    await signOut(auth);
-  } catch(error){
-    console.error('Error signing out: ', error);
-  }
+function doLogout(){
+  sessionStorage.removeItem('animax_user');
   curUser=null;watchlist=[];
   showAuth();
 }
@@ -685,24 +665,6 @@ function enterApp(){
   initApp();
 }
 
-onAuthStateChanged(auth, async (user)=>{
-  if(user){
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
-    if(userDoc.exists()){
-      curUser = userDoc.data();
-      watchlist = curUser.watchlist || [];
-      enterApp();
-      return;
-    }
-    curUser = {uid:user.uid, email:user.email, name:'User', plan:'free', watchlist:[]};
-    await setDoc(doc(db,'users',user.uid),curUser);
-    enterApp();
-  } else {
-    curUser=null;watchlist=[];
-    showAuth();
-  }
-});
-
 /* ═══ APP INIT ═══ */
 function initApp(){
   updateNavUI();
@@ -710,7 +672,6 @@ function initApp(){
   buildRows();
   updateFreeBanner();
 }
-
 function updateNavUI(){
   if(!curUser) return;
   const initials=curUser.name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
@@ -734,28 +695,12 @@ function updateFreeBanner(){
 }
 
 /* ═══ WATCHLIST ═══ */
+function saveWL(){fbSaveWL(curUser.id,watchlist).catch(e=>console.error('WL save error',e));}
 function inWL(id){return watchlist.includes(id);}
-async function toggleWL(id){
-  if(!auth.currentUser) return;
-  const userRef = doc(db, 'users', auth.currentUser.uid);
-  try{
-    if(inWL(id)){
-      await updateDoc(userRef, {watchlist: arrayRemove(id)});
-      watchlist = watchlist.filter(x=>x!==id);
-      toast('❌','Removed from My List');
-    } else {
-      await updateDoc(userRef, {watchlist: arrayUnion(id)});
-      watchlist.push(id);
-      const anime = ANIME.find(a=>a.id===id);
-      toast('✅','Added: '+(anime?anime.title:'Anime'));
-    }
-    if(document.getElementById('wlPage').classList.contains('active')){
-      buildWLPage();
-    }
-  } catch(error){
-    console.error('Error updating watchlist: ',error);
-    toast('⚠️','Error saving to My List');
-  }
+function toggleWL(id){
+  if(inWL(id)){watchlist=watchlist.filter(x=>x!==id);toast('❌','Removed from My List');}
+  else{watchlist.push(id);toast('✅','Added: '+ANIME.find(a=>a.id===id)?.title);}
+  saveWL();
 }
 
 /* ═══ HERO ═══ */
@@ -905,18 +850,12 @@ function doPayment(){
   },2200);
 }
 
-async function activatePremium(){
-  if(!auth.currentUser) return;
-  const userRef = doc(db, 'users', auth.currentUser.uid);
-  try{
-    await updateDoc(userRef, {plan:'premium'});
-    curUser.plan='premium';
-    closeUpgrade();
-    document.getElementById('successScreen').classList.add('open');
-  } catch(error){
-    console.error('Error upgrading plan: ',error);
-    toast('⚠️','Error processing upgrade');
-  }
+function activatePremium(){
+  curUser.plan='premium';
+  sessionStorage.setItem('animax_user',JSON.stringify(curUser));
+  fbUpdateUser(curUser.email,{plan:'premium'}).catch(e=>console.error('Premium update error',e));
+  closeUpgrade();
+  document.getElementById('successScreen').classList.add('open');
 }
 
 function closeSuccess(){
@@ -988,6 +927,22 @@ window.addEventListener('scroll',()=>document.getElementById('mainNav')?.classLi
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeVideo();closeDetail();closeUpgrade();if(document.getElementById('srchOv').classList.contains('open'))toggleSearch();}});
 
 /* ═══ BOOT ═══ */
+(async()=>{
+  if(curUser){
+    watchlist=await fbGetWL(curUser.id).catch(()=>[]);
+    enterApp();
+  }
+})();
+
+// expose functions called from HTML onclick (needed because of module scope)
+window.switchTab=switchTab;window.doLogin=doLogin;window.doRegister=doRegister;
+window.demoLogin=demoLogin;window.doLogout=doLogout;window.goHome=goHome;
+window.goWL=goWL;window.toggleSearch=toggleSearch;window.doSearch=doSearch;
+window.openUpgrade=openUpgrade;window.closeUpgrade=closeUpgrade;
+window.closeDetail=closeDetail;window.closeVideo=closeVideo;
+window.closeSuccess=closeSuccess;window.doPayment=doPayment;
+window.selectPayMethod=selectPayMethod;window.formatCard=formatCard;
+window.formatExp=formatExp;
 </script>
 </body>
 </html>
